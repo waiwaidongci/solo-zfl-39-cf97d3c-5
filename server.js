@@ -4,6 +4,7 @@ import http from "node:http";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { readFile } from "node:fs/promises";
+import { realpathSync } from "node:fs";
 import { Store } from "./src/store.js";
 import { USERS, HttpError } from "./src/domain.js";
 import { makeService } from "./src/service.js";
@@ -11,6 +12,21 @@ import { makeService } from "./src/service.js";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DB_PATH = process.env.DB_PATH || join(__dirname, "data", "paper-proofing.json");
 const PORT = Number(process.env.PORT || 3039);
+
+// 判断本文件是否为主入口。
+// 必须用 realpath 比较：Node 加载主模块时 import.meta.url 已解析符号链接到真实路径，
+// 而 process.argv[1] 保留调用时写的路径（可能是同一目录的别名、相对路径、含空格/中文）。
+// 直接字符串比较会在「别名目录绝对路径启动」时失配，导致不监听即 0 退出。
+function isMainModule() {
+  const argv1 = process.argv[1];
+  if (!argv1) return false;
+  const self = fileURLToPath(import.meta.url);
+  try {
+    return realpathSync(self) === realpathSync(resolve(argv1));
+  } catch {
+    return import.meta.url === pathToFileURL(resolve(argv1)).href;
+  }
+}
 
 export async function createApp({ dbPath = DB_PATH, failpoint = null, port = PORT } = {}) {
   const store = new Store(dbPath, { failpoint });
@@ -142,7 +158,7 @@ export async function createApp({ dbPath = DB_PATH, failpoint = null, port = POR
   return { server, store, svc, port: actualPort };
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (isMainModule()) {
   createApp().then(({ port, store }) => {
     console.log(`纸坊打样确认台 listening on http://localhost:${port}，数据 ${DB_PATH}`);
     for (const w of store.db.migrationWarnings || []) console.log("迁移提示：" + w);

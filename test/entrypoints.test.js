@@ -12,7 +12,7 @@
 // 子进程通过环境变量跳过本文件，防止递归自调用；同时剔除父运行器的 NODE_TEST_CONTEXT。
 import { describe, test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, cpSync, rmSync, mkdirSync } from "node:fs";
+import { mkdtempSync, cpSync, rmSync, mkdirSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -25,15 +25,19 @@ const npm = process.platform === "win32" ? "npm.cmd" : "npm";
 if (process.env.PF_ENTRY_RECURSION_GUARD === "1") {
   test("入口回归：在嵌套子进程中跳过（防止递归）", () => assert.ok(true));
 } else {
-  function stageProject() {
+  function stageProject({ viaAlias = false } = {}) {
     // 路径同时包含空格与中文：回归 file:// URL 百分号编码比较问题
     const base = mkdtempSync(join(tmpdir(), "pf 空格目录 回归-"));
-    const project = join(base, "纸坊 项目 副本");
-    mkdirSync(project, { recursive: true });
+    const realProject = join(base, "纸坊 项目 副本");
+    mkdirSync(realProject, { recursive: true });
     for (const item of ["package.json", "server.js", "src", "public", "test"]) {
-      cpSync(join(root, item), join(project, item), { recursive: true });
+      cpSync(join(root, item), join(realProject, item), { recursive: true });
     }
-    return { base, project };
+    if (!viaAlias) return { base, project: realProject };
+    // 同一目录的另一个别名（符号链接），别名路径也含空格与中文
+    const alias = join(base, "别名 纸坊 入口");
+    symlinkSync(realProject, alias, "dir");
+    return { base, project: alias };
   }
 
   function spawnChild(cmd, args, { cwd, env = {} }) {
@@ -88,9 +92,9 @@ if (process.env.PF_ENTRY_RECURSION_GUARD === "1") {
     throw new Error("服务未在规定时间内就绪：" + (lastErr?.message || lastErr) + "\n" + child.getOutput());
   }
 
-  // 在临时副本里跑一次完整 npm test，断言退出码、零失败且关键业务用例确实执行
-  async function runNestedSuite(tag) {
-    const { base, project } = stageProject();
+  // 在临时副本里跑一次完整 npm test，断言退出码、零失败零取消且关键业务用例确实执行
+  async function runNestedSuite(tag, opts = {}) {
+    const { base, project } = stageProject(opts);
     const child = spawnChild(npm, ["test", "--silent"], { cwd: project });
     const code = await new Promise((resolve) => child.on("exit", resolve));
     const text = child.getOutput();
@@ -107,36 +111,48 @@ if (process.env.PF_ENTRY_RECURSION_GUARD === "1") {
     }
   }
 
-  // concurrency:1 —— 三个重型子进程用例严格串行，互不抢占端口/CPU
-  describe("交付入口（含空格路径、标准测试入口）", { concurrency: 1, timeout: 180000 }, () => {
+  // 启动服务子进程并从日志解析实际端口；进程秒退或 15s 内未监听则失败
+  async function launchAndGetPort(child, label) {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`[${label}] 未等到启动日志\n` + child.getOutput())), 15000);
+      const tick = setInterval(() => {
+        if (child.exitCode !== null || child.signalCode) {
+          clearInterval(tick); clearTimeout(timer);
+          reject(new Error(`[${label}] 服务提前退出 code=${child.exitCode} signal=${child.signalCode}\n` + child.getOutput()));
+          return;
+        }
+        const m = child.getOutput().match(/listening on http:\/\/[^:]+:(\d+)/);
+        if (m) { clearInterval(tick); clearTimeout(timer); resolve(Number(m[1])); }
+      }, 100);
+    });
+  }
+
+  async function checkServer(child, port, { usersApi = false } = {}) {
+    if (usersApi) {
+      const res = await waitForUrl(child, `http://127.0.0.1:${port}/api/users`);
+      const users = await res.json();
+      assert.ok(Array.isArray(users) && users.length >= 4, "用户接口异常");
+    } else {
+      await waitForUrl(child, `http://127.0.0.1:${port}/api/health`);
+    }
+    const page = await fetch(`http://127.0.0.1:${port}/`);
+    assert.equal(page.status, 200);
+    assert.ok((await page.text()).includes("客户纸样打样确认台"));
+    await new Promise((r) => setTimeout(r, 300));
+    assert.equal(child.exitCode, null, "服务不应自行退出");
+  }
+
+  // concurrency:1 —— 重型子进程用例严格串行，互不抢占端口/CPU
+  describe("交付入口（含空格/中文/别名路径、标准测试入口）", { concurrency: 1, timeout: 180000 }, () => {
     test("npm start：持续监听且页面/接口可访问（相对路径启动）", async () => {
       const { base, project } = stageProject();
-      // 端口传 0，由内核分配后从子进程输出中解析
       const child = spawnChild(npm, ["start", "--silent"], {
         cwd: project,
         env: { PORT: "0", DB_PATH: join(project, "data", "proof.json") },
       });
       try {
-        // 读取启动日志里的实际端口（server.js 打印 listening on http://…:PORT）
-        const port = await new Promise((resolve, reject) => {
-          const timer = setTimeout(() => reject(new Error("未等到启动日志\n" + child.getOutput())), 15000);
-          const tick = setInterval(() => {
-            if (child.exitCode !== null) {
-              clearInterval(tick); clearTimeout(timer);
-              reject(new Error("npm start 提前退出\n" + child.getOutput()));
-            }
-            const m = child.getOutput().match(/listening on http:\/\/[^:]+:(\d+)/);
-            if (m) { clearInterval(tick); clearTimeout(timer); resolve(Number(m[1])); }
-          }, 100);
-        });
-        const res = await waitForUrl(child, `http://127.0.0.1:${port}/api/users`);
-        const users = await res.json();
-        assert.ok(Array.isArray(users) && users.length >= 4, "用户接口异常");
-        const page = await fetch(`http://127.0.0.1:${port}/`);
-        assert.equal(page.status, 200);
-        assert.ok((await page.text()).includes("客户纸样打样确认台"));
-        await new Promise((r) => setTimeout(r, 400));
-        assert.equal(child.exitCode, null, "npm start 不应自行退出");
+        const port = await launchAndGetPort(child, "npm start");
+        await checkServer(child, port, { usersApi: true });
       } finally {
         await killGroup(child);
         rmSync(base, { recursive: true, force: true });
@@ -150,21 +166,40 @@ if (process.env.PF_ENTRY_RECURSION_GUARD === "1") {
         env: { PORT: "0", DB_PATH: join(project, "data", "proof2.json") },
       });
       try {
-        const port = await new Promise((resolve, reject) => {
-          const timer = setTimeout(() => reject(new Error("未等到启动日志\n" + child.getOutput())), 15000);
-          const tick = setInterval(() => {
-            if (child.exitCode !== null) {
-              clearInterval(tick); clearTimeout(timer);
-              reject(new Error("node server.js 提前退出\n" + child.getOutput()));
-            }
-            const m = child.getOutput().match(/listening on http:\/\/[^:]+:(\d+)/);
-            if (m) { clearInterval(tick); clearTimeout(timer); resolve(Number(m[1])); }
-          }, 100);
-        });
-        await waitForUrl(child, `http://127.0.0.1:${port}/api/health`);
-        const page = await fetch(`http://127.0.0.1:${port}/`);
-        assert.equal(page.status, 200);
-        assert.equal(child.exitCode, null, "服务不应自行退出");
+        const port = await launchAndGetPort(child, "node 绝对路径");
+        await checkServer(child, port);
+      } finally {
+        await killGroup(child);
+        rmSync(base, { recursive: true, force: true });
+      }
+    });
+
+    test("别名目录场景：用与真实目录不同的别名绝对路径启动也持续监听", async () => {
+      // argv[1] 是符号链接别名路径，Node 把 import.meta.url 解析为真实路径；
+      // 入口判断必须 realpath 归一，否则失配秒退。
+      const { base, project } = stageProject({ viaAlias: true });
+      const child = spawnChild(process.execPath, [join(project, "server.js")], {
+        cwd: project,
+        env: { PORT: "0", DB_PATH: join(project, "data", "proof-alias.json") },
+      });
+      try {
+        const port = await launchAndGetPort(child, "node 别名绝对路径");
+        await checkServer(child, port, { usersApi: true });
+      } finally {
+        await killGroup(child);
+        rmSync(base, { recursive: true, force: true });
+      }
+    });
+
+    test("别名目录内 npm start（相对 server.js）正常监听", async () => {
+      const { base, project } = stageProject({ viaAlias: true });
+      const child = spawnChild(npm, ["start", "--silent"], {
+        cwd: project,
+        env: { PORT: "0", DB_PATH: join(project, "data", "proof-alias-npm.json") },
+      });
+      try {
+        const port = await launchAndGetPort(child, "别名目录 npm start");
+        await checkServer(child, port);
       } finally {
         await killGroup(child);
         rmSync(base, { recursive: true, force: true });
@@ -175,9 +210,14 @@ if (process.env.PF_ENTRY_RECURSION_GUARD === "1") {
       await runNestedSuite("单次");
     });
 
-    test("标准测试入口连续执行两次均成功（回归间歇性取消）", { timeout: 300000 }, async () => {
-      await runNestedSuite("第1次");
-      await runNestedSuite("第2次");
+    test("标准测试入口连续执行两次均成功（空格/中文路径）", { timeout: 300000 }, async () => {
+      await runNestedSuite("空格第1次");
+      await runNestedSuite("空格第2次");
+    });
+
+    test("标准测试入口经路径别名连续执行两次均成功", { timeout: 300000 }, async () => {
+      await runNestedSuite("别名第1次", { viaAlias: true });
+      await runNestedSuite("别名第2次", { viaAlias: true });
     });
   });
 }
