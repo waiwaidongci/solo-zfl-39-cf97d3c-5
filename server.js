@@ -1,8 +1,8 @@
 // HTTP 入口：路由、会话身份（X-User-Id 头 / x-user-id 调试）、静态页。
 // 业务规则全部在 src/service.js；本文件不含领域判断。
 import http from "node:http";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join, dirname, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { readFile } from "node:fs/promises";
 import { Store } from "./src/store.js";
 import { USERS, HttpError } from "./src/domain.js";
@@ -140,7 +140,7 @@ export async function createApp({ dbPath = DB_PATH, failpoint = null, port = POR
   return { server, store, svc, port };
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   createApp().then(({ port, store }) => {
     console.log(`纸坊打样确认台 listening on http://localhost:${port}，数据 ${DB_PATH}`);
     for (const w of store.db.migrationWarnings || []) console.log("迁移提示：" + w);
