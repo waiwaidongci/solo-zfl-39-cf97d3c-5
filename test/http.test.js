@@ -6,12 +6,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createApp } from "../server.js";
 
-let portBase = 4100;
-
 async function boot() {
   const dir = await mkdtemp(join(tmpdir(), "pf-http-"));
   const dbPath = join(dir, "db.json");
-  const app = await createApp({ dbPath, port: ++portBase });
+  const app = await createApp({ dbPath, port: 0 });
   const users = await (await fetch(`http://127.0.0.1:${app.port}/api/users`)).json();
   const uid = Object.fromEntries(users.map((u) => [u.name, u.id]));
   const h2 = {
@@ -37,7 +35,7 @@ async function boot() {
         app.server.closeAllConnections();
         app.server.close(r);
       });
-      const app2 = await createApp({ dbPath, port: ++portBase });
+      const app2 = await createApp({ dbPath, port: 0 });
       h2.app = app2;
       h2.base = `http://127.0.0.1:${app2.port}`;
       return h2.base;

@@ -137,7 +137,9 @@ export async function createApp({ dbPath = DB_PATH, failpoint = null, port = POR
   });
 
   await new Promise((resolve) => server.listen(port, resolve));
-  return { server, store, svc, port };
+  // 允许 port=0：由内核分配空闲端口，避免并发/嵌套测试抢占固定端口
+  const actualPort = server.address().port;
+  return { server, store, svc, port: actualPort };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

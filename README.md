@@ -18,10 +18,11 @@ npm test
 ```
 
 使用标准入口 `node --test`（无位置参数，自动发现 `test/` 下用例），在 Node 20 与 Node 22 下均完整执行。
-共 21 个用例（`test/flow.test.js`、`test/rules.test.js`、`test/http.test.js`、`test/entrypoints.test.js`）：
+共 22 个用例（`test/flow.test.js`、`test/rules.test.js`、`test/http.test.js`、`test/entrypoints.test.js`）：
 完整走通送样→检测→复核→驳回→修订→复核→确认锁定→新版本，以及越权、并发生成、
-失败回滚、跨重启持久化、旧数据兼容迁移、筛选与统计一致性；另含交付入口回归——
-在**含空格与中文的项目路径**下真实派生 `npm start`（持续监听、页面可访问）与 `npm test`（全部业务用例执行）。
+失败回滚、跨重启持久化、旧数据兼容迁移、筛选与统计一致性；另含交付入口回归（串行隔离、端口由内核分配）——
+在**含空格与中文的项目路径**下真实派生 `npm start`（持续监听、页面可访问）、`npm test`（全部业务用例执行、0 取消），
+并连续两次执行标准测试入口，防止间歇性取消。
 
 ## 业务规则
 
