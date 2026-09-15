@@ -1,0 +1,552 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>纸坊 · 客户纸样打样确认台</title>
+<style>
+:root{
+  --bg:#f2f1ec; --panel:#fff; --ink:#23271f; --muted:#6c7264; --line:#d8dccf;
+  --accent:#4d6b3f; --accent-d:#3c5531; --warn:#a4493a; --info:#3c5f7a; --gold:#9a7b2e;
+  --chip:#eef2e6;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.55 "PingFang SC","Microsoft YaHei",Arial,sans-serif}
+header{background:#fff;border-bottom:1px solid var(--line);padding:14px 22px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;position:sticky;top:0;z-index:5}
+h1{font-size:19px;margin:0}
+h2{font-size:15px;margin:0 0 10px}
+h3{margin:0;font-size:15px}
+.spacer{flex:1}
+select,input,textarea{border:1px solid var(--line);border-radius:6px;padding:7px 9px;font:inherit;background:#fff;color:var(--ink)}
+button{border:0;border-radius:6px;background:var(--accent);color:#fff;padding:8px 14px;font-weight:700;cursor:pointer}
+button:hover{background:var(--accent-d)}
+button.ghost{background:#e6e9df;color:var(--ink)}
+button.warn{background:var(--warn)}
+button.info{background:var(--info)}
+button:disabled{opacity:.45;cursor:not-allowed}
+main{padding:18px 22px;display:grid;grid-template-columns:minmax(420px,1fr) minmax(460px,1.35fr);gap:18px;align-items:start}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px}
+.panel + .panel{margin-top:16px}
+label.f{display:block;margin:9px 0 4px;color:var(--muted);font-size:12px}
+.row{display:flex;gap:10px;flex-wrap:wrap}
+.row > *{flex:1;min-width:110px}
+.pill{display:inline-block;border-radius:999px;padding:2px 10px;font-size:12px;border:1px solid var(--line);background:var(--chip)}
+.pill.confirmed{background:#e2ecdc;border-color:#9fb891;color:var(--accent-d);font-weight:700}
+.pill.rejected{background:#f6e2de;border-color:#d3a096;color:var(--warn)}
+.pill.review{background:#e4edf4;border-color:#9db8ca;color:var(--info)}
+.pill.draft{background:#f3eedd;border-color:#cdbd8b;color:var(--gold)}
+.pill.test{background:#ecefdd}
+.muted{color:var(--muted)}
+.small{font-size:12px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{border-bottom:1px solid var(--line);padding:7px 8px;text-align:left;vertical-align:top}
+th{color:var(--muted);font-weight:600;cursor:pointer}
+tr.rowclick:hover{background:#f6f8f1;cursor:pointer}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(105px,1fr));gap:8px;margin-bottom:12px}
+.stat{background:#f7f9f3;border:1px solid var(--line);border-radius:8px;padding:9px 10px}
+.stat b{display:block;font-size:21px}
+.stat span{font-size:12px;color:var(--muted)}
+.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.filters select,.filters input{width:auto;min-width:120px}
+.toast{position:fixed;right:18px;bottom:18px;max-width:430px;background:#2a3025;color:#f3f6ee;border-radius:10px;padding:12px 16px;box-shadow:0 8px 30px rgba(0,0,0,.25);z-index:50;white-space:pre-wrap}
+.toast.error{background:var(--warn)}
+.act{margin-top:12px;border-top:1px dashed var(--line);padding-top:12px}
+.kv{display:grid;grid-template-columns:96px 1fr;gap:4px 10px;font-size:13px}
+.kv dt{color:var(--muted)}
+.kv dd{margin:0}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.tabs button{background:#e6e9df;color:var(--ink);padding:6px 12px}
+.tabs button.active{background:var(--accent);color:#fff}
+.roundcard{border:1px solid var(--line);border-radius:8px;padding:12px;margin-bottom:10px;background:#fff}
+.readonly{background:#f7f8f4}
+.diff-add{background:#e2ecdc}
+.diff-sub{background:#f6e2de}
+.timeline{max-height:170px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:12px}
+.timeline div{padding:2px 0;border-bottom:1px dotted var(--line)}
+.compare-grid{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.compare-grid > div{padding:10px 12px;border-bottom:1px solid var(--line)}
+.compare-grid .h{background:#f3f6ec;font-weight:700}
+.compare-grid .l{color:var(--muted);font-size:12px;background:#fbfcF8}
+.back{cursor:pointer;color:var(--info);font-weight:700}
+@media (max-width:1000px){main{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <h1>纸坊 · 客户纸样打样确认台</h1>
+  <span class="muted small">用途 / 尺寸 / 厚度 / 纹理 / 色差 · 版本锁定与修订留痕</span>
+  <div class="spacer"></div>
+  <label class="small muted">当前身份</label>
+  <select id="userSelect"></select>
+  <button class="ghost" id="refreshBtn">刷新</button>
+</header>
+
+<main>
+  <!-- 左列：建单 + 列表 -->
+  <div>
+    <section class="panel" id="createPanel">
+      <h2>新建打样单</h2>
+      <div class="row">
+        <div><label class="f">客户 *</label><select id="f-customer"></select></div>
+        <div><label class="f">用途 *</label><input id="f-purpose" placeholder="如：线装书封面"></div>
+      </div>
+      <div class="row">
+        <div><label class="f">长 mm *</label><input id="f-length" type="number" step="0.1" placeholder="297"></div>
+        <div><label class="f">宽 mm *</label><input id="f-width" type="number" step="0.1" placeholder="210"></div>
+        <div><label class="f">厚度 μm *</label><input id="f-thickness" type="number" step="0.1" placeholder="120"></div>
+      </div>
+      <div class="row">
+        <div><label class="f">纹理 *</label><select id="f-texture"></select></div>
+        <div><label class="f">色差ΔE上限 *</label><input id="f-deltaE" type="number" step="0.1" placeholder="1.5"></div>
+      </div>
+      <details><summary class="muted small">公差设置（可选，默认 长宽±2mm、厚度±5μm、ΔE1.5）</summary>
+        <div class="row">
+          <div><label class="f">长公差</label><input id="f-tol-length" type="number" step="0.1"></div>
+          <div><label class="f">宽公差</label><input id="f-tol-width" type="number" step="0.1"></div>
+          <div><label class="f">厚度公差</label><input id="f-tol-thickness" type="number" step="0.1"></div>
+          <div><label class="f">ΔE公差</label><input id="f-tol-deltaE" type="number" step="0.1"></div>
+        </div>
+      </details>
+      <div style="margin-top:10px"><button id="createBtn">登记打样单</button></div>
+    </section>
+
+    <section class="panel">
+      <h2>打样单 / 轮次明细</h2>
+      <div class="filters row" style="margin-bottom:10px">
+        <select id="q-customer"><option value="">全部客户</option></select>
+        <select id="q-purpose"><option value="">全部用途</option></select>
+        <select id="q-version"><option value="">全部版本</option><option value="latest" selected>当前版本</option><option value="all">所有版本</option></select>
+        <select id="q-deviation">
+          <option value="">全部偏差</option>
+          <option value="within_half">≤半公差</option>
+          <option value="within">半~全公差</option>
+          <option value="out">超差</option>
+          <option value="untested">无检测值</option>
+        </select>
+        <select id="q-confirm">
+          <option value="">确认状态：全部</option>
+          <option value="confirmed">已确认</option>
+          <option value="unconfirmed">未确认</option>
+        </select>
+        <input id="q-search" placeholder="搜索单号/用途/客户">
+      </div>
+      <div class="stats" id="stats"></div>
+      <div style="max-height:520px;overflow:auto">
+        <table id="listTable">
+          <thead><tr>
+            <th data-sort="code">单号</th><th>客户</th><th>用途</th><th>版·轮</th>
+            <th data-sort="status">状态</th><th data-sort="deviationRatio">偏差</th><th>确认</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="muted small" id="listHint"></div>
+    </section>
+  </div>
+
+  <!-- 右列：详情 / 操作 / 比较 -->
+  <div>
+    <section class="panel" id="detailPanel">
+      <div class="muted">点击左侧单号查看详情，并按当前身份执行送样、检测、复核、修订与确认。</div>
+    </section>
+  </div>
+</main>
+
+<div id="toast" style="display:none"></div>
+
+<script>
+const $ = (s, el=document) => el.querySelector(s);
+const $$ = (s, el=document) => [...el.querySelectorAll(s)];
+let users = [], me = null, meta = null, rowsData = [], sortKey = "code", sortDir = 1, selectedId = null, detailOrder = null;
+let timer = null;
+
+async function api(path, opts={}) {
+  const headers = { ...(opts.headers||{}) };
+  if (me) headers["X-User-Id"] = me.id;
+  if (opts.body) headers["Content-Type"] = "application/json";
+  const res = await fetch(path, { ...opts, headers });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) { const e = new Error(data.message || data.error || "请求失败"); e.code = data.error; e.detail = data.detail; throw e; }
+  return data;
+}
+function toast(msg, isErr=false) {
+  const t = $("#toast"); t.textContent = msg; t.className = "toast" + (isErr ? " error" : ""); t.style.display = "block";
+  clearTimeout(timer); timer = setTimeout(() => t.style.display = "none", 4200);
+}
+function esc(s){ return String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+function statusPill(s){
+  const cls = s==="已确认"?"confirmed":s==="已驳回"?"rejected":(s==="待复核"||s==="待确认")?"review":s==="待送样"?"draft":"test";
+  return `<span class="pill ${cls}">${s}</span>`;
+}
+const GRADE_TXT = {within_half:"≤半公差", within:"半~全公差", out:"超差", untested:"未检测"};
+function gradeTxt(g, ratio){ return g==="untested" ? "—" : `${GRADE_TXT[g]} (${Math.round((ratio??0)*100)}%)`; }
+function rolesTxt(u){ return u.roles.map(r=>({submitter:"送样员",inspector:"检测员",reviewer:"复核员",customer:"客户"}[r])).join("/"); }
+
+// ---------- 初始化 ----------
+async function init() {
+  users = await api("/api/users");
+  const saved = localStorage.getItem("pf-user");
+  me = users.find(u => u.id === saved) || users[0];
+  $("#userSelect").innerHTML = users.map(u => `<option value="${u.id}" ${u.id===me.id?"selected":""}>${u.name}（${rolesTxt(u)}）</option>`).join("");
+  await loadMeta();
+  bindEvents();
+  await reload();
+}
+async function loadMeta() {
+  meta = await api("/api/meta");
+  $("#f-customer").innerHTML = meta.customers.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
+  $("#q-customer").innerHTML = `<option value="">全部客户</option>` + meta.customers.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
+  $("#f-texture").innerHTML = meta.textures.map(t => `<option>${t}</option>`).join("");
+  fillPurposeOptions(meta.purposes);
+}
+function fillPurposeOptions(purposes) {
+  const cur = $("#q-purpose").value;
+  $("#q-purpose").innerHTML = `<option value="">全部用途</option>` + purposes.map(p => `<option ${p===cur?"selected":""}>${esc(p)}</option>`).join("");
+}
+
+function bindEvents() {
+  $("#userSelect").onchange = async e => { me = users.find(u=>u.id===e.target.value); localStorage.setItem("pf-user", me.id); selectedId=null; await loadMeta(); await reload(); };
+  $("#refreshBtn").onclick = reload;
+  $("#createBtn").onclick = createOrder;
+  for (const id of ["q-customer","q-purpose","q-version","q-deviation","q-confirm"]) $("#"+id).onchange = reload;
+  $("#q-search").oninput = reload;
+  $$("#listTable th[data-sort]").forEach(th => th.onclick = () => {
+    const k = th.dataset.sort; sortDir = sortKey===k ? -sortDir : 1; sortKey = k; renderList();
+  });
+}
+
+function buildSpecInput(prefix) {
+  const body = {
+    customerId: $("#f-customer").value,
+    purpose: $("#f-purpose").value.trim(),
+    length: $("#f-length").value, width: $("#f-width").value,
+    thickness: $("#f-thickness").value, texture: $("#f-texture").value,
+    deltaE: $("#f-deltaE").value, tolerance: {},
+  };
+  for (const k of ["length","width","thickness","deltaE"]) {
+    const v = $("#f-tol-"+k).value; if (v!=="") body.tolerance[k] = v;
+  }
+  return body;
+}
+async function createOrder() {
+  if (!me.roles.includes("submitter")) return toast("当前身份不是送样员，不能登记打样单", true);
+  try {
+    const o = await api("/api/orders", { method:"POST", body: JSON.stringify(buildSpecInput()) });
+    toast(`已登记打样单 ${o.code}（第1版·第1轮 待送样）`);
+    ["f-purpose","f-length","f-width","f-thickness","f-deltaE"].forEach(id=>$("#"+id).value="");
+    selectedId = o.id; await reload();
+  } catch(e){ toast(e.message, true); }
+}
+
+async function reloadList() {
+  const q = new URLSearchParams();
+  const customer = $("#q-customer").value, purpose = $("#q-purpose").value;
+  if (customer) q.set("customerId", customer);
+  if (purpose) q.set("purpose", purpose);
+  q.set("version", $("#q-version").value || "latest");
+  if ($("#q-deviation").value) q.set("deviation", $("#q-deviation").value);
+  if ($("#q-confirm").value) q.set("confirm", $("#q-confirm").value);
+  const s = $("#q-search").value.trim(); if (s) q.set("q", s);
+  const data = await api("/api/orders?"+q.toString());
+  rowsData = data.rows;
+  renderStats(data.stats);
+  renderList();
+  $("#listHint").textContent = `共 ${rowsData.length} 行（统计与明细同源同筛选；客户身份仅可见本客户数据）`;
+}
+async function reload() {
+  try {
+    await reloadList();
+    fillPurposeOptions((meta.purposes||[]));
+    if (selectedId) {
+      try { detailOrder = await api("/api/orders/"+encodeURIComponent(selectedId)); renderDetail(); }
+      catch { selectedId = null; renderEmptyDetail(); }
+    }
+  } catch(e){ toast(e.message, true); }
+}
+
+function renderStats(st) {
+  const items = [
+    ["总行数", st.total],["已确认", st.confirmed],["未确认", st.unconfirmed],
+    ...Object.entries(st.byStatus).map(([k,v])=>[k,v]),
+  ];
+  $("#stats").innerHTML = items.map(([k,v])=>`<div class="stat"><b>${v}</b><span>${esc(k)}</span></div>`).join("")
+    + `<div class="stat"><b>${st.byGrade.within_half}</b><span>≤半公差</span></div>`
+    + `<div class="stat"><b>${st.byGrade.within}</b><span>半~全公差</span></div>`
+    + `<div class="stat"><b style="color:var(--warn)">${st.byGrade.out}</b><span>超差</span></div>`
+    + `<div class="stat"><b>${st.byGrade.untested}</b><span>无检测值</span></div>`;
+}
+
+function renderList() {
+  const sorters = {
+    code: r=>r.code, status: r=>r.status, deviationRatio: r=>r.deviationRatio ?? -1,
+  };
+  const sorted = [...rowsData].sort((a,b)=>{
+    const va=sorters[sortKey]?sorters[sortKey](a):a.code, vb=sorters[sortKey]?sorters[sortKey](b):b.code;
+    return va<vb?-sortDir:va>vb?sortDir:0;
+  });
+  $("#listTable tbody").innerHTML = sorted.map(r => `
+    <tr class="rowclick ${selectedId===r.orderId?"readonly":""}" data-id="${r.orderId}">
+      <td><b>${esc(r.code)}</b>${r.isCurrentVersion?"":' <span class="small muted">（旧版v'+r.specVersion+'）</span>'}</td>
+      <td>${esc(r.customerName)}</td>
+      <td>${esc(r.purpose)}</td>
+      <td>v${r.specVersion}·第${r.roundNo}轮</td>
+      <td>${statusPill(r.status)}</td>
+      <td>${gradeTxt(r.grade,r.deviationRatio)}</td>
+      <td>${r.confirmed?'<span class="pill confirmed">已锁定</span>':'<span class="muted small">—</span>'}</td>
+    </tr>`).join("") || `<tr><td colspan="7" class="muted">无匹配记录</td></tr>`;
+  $$("#listTable tbody tr[data-id]").forEach(tr => tr.onclick = async () => {
+    selectedId = tr.dataset.id;
+    detailOrder = await api("/api/orders/"+encodeURIComponent(selectedId));
+    renderList(); renderDetail();
+  });
+}
+
+// ---------- 详情 ----------
+function renderEmptyDetail() {
+  $("#detailPanel").innerHTML = `<div class="muted">点击左侧单号查看详情，并按当前身份执行送样、检测、复核、修订与确认。</div>`;
+}
+function specKV(spec) {
+  const t = spec.tolerance||{};
+  return `<dl class="kv">
+    <dt>尺寸</dt><dd>${spec.length} × ${spec.width} mm（公差 ±${t.length??"—"} / ±${t.width??"—"}）</dd>
+    <dt>厚度</dt><dd>${spec.thickness} μm（公差 ±${t.thickness??"—"}）</dd>
+    <dt>纹理</dt><dd>${esc(spec.texture)}</dd>
+    <dt>色差</dt><dd>ΔE ≤ ${spec.deltaE}（公差 ${t.deltaE??"—"}）</dd>
+  </dl>`;
+}
+function renderDetail() {
+  const o = detailOrder, last = o.rounds[o.rounds.length-1];
+  const can = (role) => me.roles.includes(role);
+  let html = `
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <span class="back" id="backList">← 返回</span>
+      <h3>${esc(o.code)} · v${o.specVersion} · ${esc(o.purpose)}</h3>
+      ${statusPill(o.status)}
+      ${o.status==="已确认"?'<span class="pill confirmed">版本已锁定</span>':""}
+      <span class="spacer" style="flex:1"></span>
+      <span class="muted small">数据版本 ${o.revision}（提交需带此版本号）</span>
+    </div>
+    <div class="muted small" style="margin:6px 0 10px">客户：${esc(o.customerId)} · 建档 ${new Date(o.createdAt).toLocaleString()}</div>
+    <h2>当前版本：第 ${last.roundNo} 轮 ${statusPill(last.status)}</h2>
+    ${specKV(last.spec)}`;
+
+  html += `<div class="act">` + actionPanel(o, last, can) + `</div>`;
+
+  // 历史轮次（只读）
+  if (o.rounds.length > 1 || o.versions.length) {
+    html += `<div class="act"><h2>修订历史（旧记录只读，可比较）</h2><div id="roundPicker"></div><div id="compareArea"></div></div>`;
+  }
+  // 时间线
+  html += `<div class="act"><h2>事件留痕</h2><div class="timeline">${
+    o.events.map(e=>`<div><b>${new Date(e.at).toLocaleString()}</b> ${esc(e.actorName)} · ${esc(e.type)} ${e.detail?.reason? "· "+esc(e.detail.reason):""} ${e.detail?.roundNo? "· 第"+e.detail.roundNo+"轮":""}</div>`).join("")
+  }</div></div>`;
+
+  // 已归档旧版本（只读）
+  if (o.versions.length) {
+    html += `<div class="act readonly"><h2>已锁定旧版本（只读）</h2>` + o.versions.map(v =>
+      `<div class="small muted">v${v.specVersion}（${esc(v.purpose)}）· 共 ${v.rounds.length} 轮 · 锁定于 ${new Date(v.confirmedAt).toLocaleString()}</div>`).join("") + `</div>`;
+  }
+  $("#detailPanel").innerHTML = html;
+  $("#backList").onclick = () => { selectedId=null; renderList(); renderEmptyDetail(); };
+  if ($("#roundPicker")) wireHistory(o);
+  wireActions(o, last);
+}
+
+function actionPanel(o, r, can) {
+  const er = `（数据版本 <input id="expectedRevision" size="3" value="${o.revision}" style="padding:2px 4px;width:52px">）`;
+  const noteInput = `<label class="f">说明</label><input id="act-note" placeholder="选填">`;
+  if (r.status === "待送样") {
+    if (can("submitter")) return `<div class="muted small">登记试样后送检。同一打样单仅保留一个待检试样。</div>
+      ${noteInput}<div style="margin-top:8px"><button data-act="submit">送检（待送样→待检测）</button> ${er}</div>`;
+    return `<div class="muted">等待送样员送检…</div>`;
+  }
+  if (r.status === "待检测") {
+    if (can("inspector")) {
+      const vals = meta.numericItems.map(k =>
+        `<div><label class="f">${esc(meta.itemLabels[k])} 实测 *</label><input id="tv-${k}" type="number" step="0.01"></div>`).join("");
+      return `<div class="row">${vals}
+        <div><label class="f">纹理判定 *</label><select id="tv-texture">${meta.textures.map(t=>`<option ${t===r.spec.texture?"selected":""}>${t}</option>`).join("")}</select></div>
+      </div>
+      <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+        <button data-act="test">登记完整检测值并送复核</button>
+        <button class="warn" data-act="inspect-reject">超差判废（驳回待修订）</button>
+        <input id="act-reason" placeholder="判废原因（判废必填）" style="flex:1;min-width:180px">
+      </div><div class="small muted" style="margin-top:6px">缺项、超差、越序、重复提交都会被服务器拒绝；判废必须附完整检测值。 ${er}</div>`;
+    }
+    return `<div class="muted">检测员登记检测值中…</div>`;
+  }
+  if (r.status === "待复核") {
+    if (can("reviewer")) {
+      return `<div class="readonly roundcard">${testView(r)}</div>
+        <div class="muted small">检测人：${esc(r.test.inspectorName)}。检测人不能复核自己的试样。</div>
+        <input id="act-reason" placeholder="驳回原因（驳回必填）" style="width:100%;margin-top:6px">
+        <div style="margin-top:8px;display:flex;gap:8px">
+          <button class="info" data-act="approve">复核通过（转客户确认）</button>
+          <button class="warn" data-act="review-reject">驳回（新建修订轮）</button>${er}
+        </div>`;
+    }
+    return `<div class="muted">等待复核员复核（检测人：${esc(r.test?.inspectorName)}）…</div>`;
+  }
+  if (r.status === "待确认") {
+    if (can("customer")) {
+      return `<div class="readonly roundcard">${testView(r)}<div class="small muted">复核：${esc(r.review.reviewerName)} 通过</div></div>
+        <input id="act-reason" placeholder="客户驳回原因（驳回必填）" style="width:100%;margin-top:6px">
+        <div style="margin-top:8px;display:flex;gap:8px">
+          <button data-act="confirm">客户确认并锁定版本</button>
+          <button class="warn" data-act="customer-reject">驳回（新建修订轮）</button>${er}
+        </div>`;
+    }
+    return `<div class="muted">等待客户确认…</div>`;
+  }
+  if (r.status === "已驳回") {
+    const rej = r.rejection || {};
+    const head = `<div class="roundcard" style="border-color:#d3a096;background:#fcf5f3">
+      <b>第${r.roundNo}轮已驳回</b>（${esc(rej.stage)}阶段，${esc(rej.byName)}）<div class="small">原因：${esc(rej.reason)}</div></div>`;
+    if (can("submitter")) {
+      return head + `<div class="muted small" style="margin:8px 0">驳回后必须新建修订轮；可调整规格后重开一轮，旧轮只读保留。</div>
+      <div class="row">
+        <div><label class="f">长 mm</label><input id="rv-length" type="number" step="0.1" placeholder="${r.spec.length}"></div>
+        <div><label class="f">宽 mm</label><input id="rv-width" type="number" step="0.1" placeholder="${r.spec.width}"></div>
+        <div><label class="f">厚度 μm</label><input id="rv-thickness" type="number" step="0.1" placeholder="${r.spec.thickness}"></div>
+        <div><label class="f">色差ΔE</label><input id="rv-deltaE" type="number" step="0.1" placeholder="${r.spec.deltaE}"></div>
+        <div><label class="f">纹理</label><select id="rv-texture"><option value="">沿用：${esc(r.spec.texture)}</option>${meta.textures.map(t=>`<option>${t}</option>`).join("")}</select></div>
+      </div>
+      <div style="margin-top:8px"><button data-act="revise">新建第 ${r.roundNo+1} 修订轮</button> ${er}</div>`;
+    }
+    return head + `<div class="muted">等待送样员新建修订轮…</div>`;
+  }
+  if (r.status === "已确认") {
+    const head = `<div class="roundcard readonly"><b>第${r.roundNo}轮已由客户确认锁定</b>
+      <div class="small muted">确认人：${esc(r.confirmation.decidedByName)} · ${new Date(r.confirmation.decidedAt).toLocaleString()}</div>
+      ${testView(r)}</div>`;
+    if (can("submitter")) {
+      return head + `<div class="muted small" style="margin:8px 0">锁定后直接修改一律拒绝（过期写入）；需要调整请生成新版本，旧版本归档只读。</div>
+      <div class="row">
+        <div><label class="f">新用途（可选）</label><input id="nv-purpose" placeholder="${esc(o.purpose)}"></div>
+        <div><label class="f">长 mm</label><input id="nv-length" type="number" step="0.1" placeholder="${r.spec.length}"></div>
+        <div><label class="f">宽 mm</label><input id="nv-width" type="number" step="0.1" placeholder="${r.spec.width}"></div>
+        <div><label class="f">厚度 μm</label><input id="nv-thickness" type="number" step="0.1" placeholder="${r.spec.thickness}"></div>
+        <div><label class="f">色差ΔE</label><input id="nv-deltaE" type="number" step="0.1" placeholder="${r.spec.deltaE}"></div>
+        <div><label class="f">纹理</label><select id="nv-texture"><option value="">沿用：${esc(r.spec.texture)}</option>${meta.textures.map(t=>`<option>${t}</option>`).join("")}</select></div>
+      </div>
+      <div style="margin-top:8px"><button class="info" data-act="new-version">生成新版本 v${o.specVersion+1}</button> ${er}</div>`;
+    }
+    return head;
+  }
+  return "";
+}
+function testView(r) {
+  if (!r.test) return "";
+  const v = r.test.values||{};
+  const rows = meta.allItems.map(k => {
+    if (k==="texture") return `<tr><td>纹理</td><td>${esc(v.texture)}</td><td>登记：${esc(r.spec.texture)}</td><td>${v.texture===r.spec.texture?"一致":"不符"}</td></tr>`;
+    const tol = r.spec.tolerance?.[k];
+    const target = r.spec[k], actual = v[k];
+    const excess = k==="deltaE" ? Math.max(0,actual-target) : Math.abs(actual-target);
+    const ok = excess <= tol + 1e-9;
+    return `<tr><td>${esc(meta.itemLabels[k])}</td><td>${actual}</td><td>${target} ± ${tol}</td><td style="color:${ok?"var(--accent-d)":"var(--warn)"}">${ok?"合格":"超差 "+excess.toFixed(2)}</td></tr>`;
+  }).join("");
+  return `<div class="small muted">检测值（${esc(r.test.inspectorName)} · ${new Date(r.test.testedAt).toLocaleString()}）</div>
+    <table><thead><tr><th>项目</th><th>实测</th><th>登记/公差</th><th>判定</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function gatherFields(prefix, keys) {
+  const out = {};
+  for (const k of keys) { const el=$("#"+prefix+"-"+k); if (el && el.value!=="") out[k]=el.value; }
+  return out;
+}
+function wireActions(o, r) {
+  $$("[data-act]").forEach(btn => btn.onclick = async () => {
+    const erEl = $("#expectedRevision");
+    const body = { expectedRevision: erEl ? Number(erEl.value) : o.revision };
+    const reason = $("#act-reason")?.value.trim();
+    const note = $("#act-note")?.value.trim();
+    try {
+      switch (btn.dataset.act) {
+        case "submit": Object.assign(body, { note }); await post(o.id,"specimens",body); break;
+        case "test":
+          body.values = {};
+          for (const k of meta.allItems) body.values[k] = $("#tv-"+k).value;
+          await post(o.id,"tests",body); break;
+        case "inspect-reject":
+          body.values = {}; for (const k of meta.allItems) body.values[k] = $("#tv-"+k).value;
+          body.reason = reason; await post(o.id,"inspector-reject",body); break;
+        case "approve": body.decision="approve"; await post(o.id,"reviews",body); break;
+        case "review-reject": body.decision="reject"; body.reason=reason; await post(o.id,"reviews",body); break;
+        case "confirm": body.decision="approve"; await post(o.id,"confirmations",body); break;
+        case "customer-reject": body.decision="reject"; body.reason=reason; await post(o.id,"confirmations",body); break;
+        case "revise": Object.assign(body, gatherFields("rv",["length","width","thickness","deltaE","texture"])); await post(o.id,"revisions",body); break;
+        case "new-version": {
+          const p = gatherFields("nv",["length","width","thickness","deltaE","texture"]);
+          if ($("#nv-purpose")?.value.trim()) p.purpose = $("#nv-purpose").value.trim();
+          Object.assign(body, p); await post(o.id,"versions",body); break;
+        }
+      }
+      toast("操作成功"); await reloadAfterAction(o.id);
+    } catch(e) {
+      // 被拒绝的写入不改变服务器状态：保留表单与数据版本，仅刷新左侧列表与统计
+      toast(`操作被拒绝：${e.message}`, true);
+      await reloadList().catch(()=>{});
+    }
+  });
+}
+async function post(id, action, body) {
+  return api(`/api/orders/${encodeURIComponent(id)}/${action}`, { method:"POST", body: JSON.stringify(body) });
+}
+async function reloadAfterAction(id) {
+  detailOrder = await api("/api/orders/"+encodeURIComponent(id));
+  renderDetail(); await reload();
+}
+
+// ---------- 历史轮次选择 + 并排比较 ----------
+function allRoundOptions(o) {
+  const opts = [];
+  for (const v of o.versions) for (const r of v.rounds) opts.push({ version:v.specVersion, roundNo:r.roundNo, label:`旧版v${v.specVersion}·第${r.roundNo}轮` });
+  for (const r of o.rounds) opts.push({ version:o.specVersion, roundNo:r.roundNo, label:`v${o.specVersion}·第${r.roundNo}轮` });
+  return opts;
+}
+function wireHistory(o) {
+  const opts = allRoundOptions(o);
+  const sel = (id, def) => `<select id="${id}">${opts.map(x=>`<option value="${x.version}/${x.roundNo}" ${def===x.version+"/"+x.roundNo?"selected":""}>${x.label} · ${escRoundStatus(o,x)}</option>`).join("")}</select>`;
+  const firstRejected = opts.find(x=>escRoundStatus(o,x)==="已驳回") || opts[0];
+  $("#roundPicker").innerHTML = `<div class="row" style="align-items:end">
+    <div><label class="f">A</label>${sel("cmpA", opts[0].version+"/"+opts[0].roundNo)}</div>
+    <div><label class="f">B</label>${sel("cmpB", (firstRejected?firstRejected.version+"/"+firstRejected.roundNo:opts[0].version+"/"+opts[0].roundNo))}</div>
+    <div style="flex:0 0 auto"><button class="ghost" id="cmpBtn">并排比较</button></div>
+  </div>`;
+  $("#cmpBtn").onclick = async () => {
+    const [av,ar] = $("#cmpA").value.split("/"); const [bv,br] = $("#cmpB").value.split("/");
+    try {
+      const c = await api(`/api/orders/${encodeURIComponent(o.id)}/compare?av=${av}&ar=${ar}&bv=${bv}&br=${br}`);
+      renderCompare(c);
+    } catch(e){ toast(e.message,true); }
+  };
+}
+function escRoundStatus(o,x){
+  if (x.version===o.specVersion) return o.rounds.find(r=>r.roundNo===x.roundNo)?.status||"";
+  return o.versions.find(v=>v.specVersion===x.version)?.rounds.find(r=>r.roundNo===x.roundNo)?.status||"";
+}
+function renderCompare(c) {
+  const side = (t) => {
+    const s=t.spec, v=t.test?.values||{};
+    const line = (k, unit="") => {
+      const va=v[k], vb=t?null:null;
+      return va==null ? `<div class="l">${esc(meta.itemLabels[k])}</div><div>—</div>`
+        : `<div class="l">${esc(meta.itemLabels[k])}</div><div>${va}${unit} <span class="small muted">/ 目标${s[k]}±${s.tolerance?.[k]??"—"}</span></div>`;
+    };
+    return `<div class="h">${t.archived?"🔒 ":""}v${t.specVersion}·第${t.roundNo}轮 ${statusPill(t.status)}${t.archived?'<span class="small muted">（归档只读）</span>':""}</div>
+      <div class="l">用途</div><div>${esc(t.purpose)}</div>
+      <div class="l">规格</div><div>${s.length}×${s.width}mm，${s.thickness}μm，${esc(s.texture)}，ΔE≤${s.deltaE}</div>
+      <div class="l">送样</div><div>${t.specimen?new Date(t.specimen.submittedAt).toLocaleString()+" · "+esc(t.specimen.submittedByName):"—"}</div>
+      <div class="l">检测</div><div>${t.test?Object.entries(v).map(([k,val])=>`${meta.itemLabels[k]||k}=${val}`).join("，")+" · "+esc(t.test.inspectorName):"—"}</div>
+      <div class="l">偏差</div><div>${t.deviationRatio==null?"—":Math.round(t.deviationRatio*100)+"%（"+GRADE_TXT[t.grade]+"）"}</div>
+      <div class="l">驳回</div><div>${t.rejection?esc(t.rejection.stage)+"："+esc(t.rejection.reason):"—"}</div>
+      <div class="l">确认</div><div>${t.confirmation?.result==="确认"?"✅ 已锁定 "+new Date(t.confirmation.decidedAt).toLocaleString():"—"}</div>`;
+  };
+  $("#compareArea").innerHTML = `<h2 style="margin-top:12px">并排比较（只读）</h2><div class="compare-grid">${side(c.a)}${side(c.b)}</div>`;
+}
+
+init();
+</script>
+</body>
+</html>

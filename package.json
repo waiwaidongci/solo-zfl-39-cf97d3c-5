@@ -1,9 +1,10 @@
 {
-  "name": "zfl-39-paper-pulp-fermentation",
-  "version": "1.0.0",
+  "name": "paper-proofing-console",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test --test-reporter=spec test/"
   }
 }
